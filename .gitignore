@@ -1,0 +1,27 @@
+
+# Build artifacts
+build/
+*.deb
+
+# Go build artifacts
+monitoring-agent
+*.exe
+
+# Generated protobuf files (optional - remove if you want to commit them)
+proto/*.pb.go
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Log files
+*.log
+
+# Environment files (may contain secrets)
+.env
+monitoring-agent.env
+
+# Test files
+*_test.go.tmp

@@ -1,0 +1,29 @@
+
+#!/bin/bash
+set -e
+
+case "$1" in
+    purge)
+        # Remove user and group
+        if getent passwd monitoring-agent >/dev/null 2>&1; then
+            deluser monitoring-agent || true
+        fi
+        
+        if getent group monitoring-agent >/dev/null 2>&1; then
+            delgroup monitoring-agent || true
+        fi
+        
+        # Remove directories
+        rm -rf /var/lib/monitoring-agent
+        rm -rf /var/log/monitoring-agent
+        rm -rf /etc/monitoring-agent
+        
+        echo "Server Monitoring Agent completely removed."
+        ;;
+    remove)
+        echo "Server Monitoring Agent removed but configuration preserved."
+        ;;
+esac
+
+# Reload systemd
+systemctl daemon-reload || true
