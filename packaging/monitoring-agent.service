@@ -1,7 +1,7 @@
 
 [Unit]
 Description=CheckCle Server Monitoring Agent
-Documentation=https://github.com/checkcle/server-monitoring-agent
+Documentation=https://github.com/operacle/server-monitoring-agent
 After=network.target
 Wants=network.target
 

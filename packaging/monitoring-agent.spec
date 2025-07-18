@@ -4,7 +4,7 @@ Version:        %{_version}
 Release:        %{_release}%{?dist}
 Summary:        Go-based monitoring agent with gRPC and PocketBase support
 License:        MIT
-URL:            https://github.com/checkcle/server-monitoring-agent
+URL:            https://github.com/operacle/server-monitoring-agent
 Source0:        %{name}-%{version}.tar.gz
 BuildArch:      %{_arch}
 
@@ -120,7 +120,7 @@ fi
 %attr(755,monitoring-agent,monitoring-agent) %dir %{_localstatedir}/log/monitoring-agent
 
 %changelog
-* Thu Jul 17 2025 CheckCle Team <support@checkcle.com> - 1.0.0-1
+* Thu Jul 17 2025 Tola Leng <hello@checkcle.com> - 1.0.0-1
 - Initial RPM package with multi-architecture support
 - System metrics collection support
 - Multiple communication protocols (gRPC, PocketBase, HTTP)

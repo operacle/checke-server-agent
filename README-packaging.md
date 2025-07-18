@@ -10,8 +10,10 @@ This directory contains the packaging infrastructure for building the Server Mon
 ./build.sh
 
 # Build specific package type
-./build.sh deb
-./build.sh rpm
+./build.sh deb #Build DEB packages for both architectures
+./build.sh rpm 
+./build.sh rpm arm64 #Build RPM package for ARM64 only
+./build.sh all amd64 #- Build all packages for AMD64 only
 ```
 
 ## Package Structure
