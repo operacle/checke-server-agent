@@ -9,8 +9,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="/etc/monitoring-agent/monitoring-agent.env"
 
-# Remote URLs for downloading
-GITHUB_PACKAGE_URL="https://github.com/operacle/checke-server-agent.git/releases/download/V1.0.0/monitoring-agent_arm64.deb"
+# GitHub release base URL
+GITHUB_BASE_URL="https://github.com/operacle/checke-server-agent/releases/download/v1.0.0"
 
 # Colors for output
 RED='\033[0;31m'
@@ -44,6 +44,56 @@ check_root() {
     fi
 }
 
+# Detect system architecture and package format
+detect_system() {
+    log_info "Detecting system architecture and package format..."
+    
+    # Detect architecture
+    ARCH=$(uname -m)
+    case $ARCH in
+        x86_64)
+            PACKAGE_ARCH="amd64"
+            ;;
+        aarch64|arm64)
+            PACKAGE_ARCH="arm64"
+            ;;
+        *)
+            log_error "Unsupported architecture: $ARCH"
+            log_info "Supported architectures: x86_64 (amd64), aarch64/arm64"
+            exit 1
+            ;;
+    esac
+    
+    # Detect package format preference
+    if command -v dpkg >/dev/null 2>&1; then
+        PACKAGE_FORMAT="deb"
+        PACKAGE_MANAGER="dpkg"
+    elif command -v rpm >/dev/null 2>&1; then
+        PACKAGE_FORMAT="rpm"
+        if command -v yum >/dev/null 2>&1; then
+            PACKAGE_MANAGER="yum"
+        elif command -v dnf >/dev/null 2>&1; then
+            PACKAGE_MANAGER="dnf"
+        else
+            PACKAGE_MANAGER="rpm"
+        fi
+    else
+        log_error "No supported package manager found (dpkg or rpm required)"
+        log_info "This script supports Debian/Ubuntu (.deb) and RHEL/CentOS/Fedora (.rpm) systems"
+        exit 1
+    fi
+    
+    # Construct package filename and URL
+    PACKAGE_FILENAME="monitoring-agent_1.0.0_${PACKAGE_ARCH}.${PACKAGE_FORMAT}"
+    PACKAGE_URL="${GITHUB_BASE_URL}/${PACKAGE_FILENAME}"
+    
+    log_success "System detection complete:"
+    log_info "  Architecture: $ARCH -> $PACKAGE_ARCH"
+    log_info "  Package format: $PACKAGE_FORMAT"
+    log_info "  Package manager: $PACKAGE_MANAGER"
+    log_info "  Package URL: $PACKAGE_URL"
+}
+
 # Validate required environment variables - check both current and sudo environments
 validate_environment() {
     # Check if SERVER_TOKEN is available in current environment or passed as argument
@@ -66,36 +116,80 @@ validate_environment() {
     [[ -n "$AGENT_ID" ]] && log_info "AGENT_ID: $AGENT_ID"
 }
 
-# Download package if not available locally
+# Download package based on detected system
 download_package() {
     local temp_dir="/tmp/monitoring-agent-install"
     mkdir -p "$temp_dir"
     
     log_info "Downloading monitoring agent package..."
-    if curl -L -o "$temp_dir/monitoring-agent.deb" "$GITHUB_PACKAGE_URL"; then
-        DEB_PACKAGE="$temp_dir/monitoring-agent.deb"
-        log_success "Package downloaded successfully"
+    log_info "URL: $PACKAGE_URL"
+    
+    if curl -L -f -o "$temp_dir/$PACKAGE_FILENAME" "$PACKAGE_URL"; then
+        DOWNLOADED_PACKAGE="$temp_dir/$PACKAGE_FILENAME"
+        log_success "Package downloaded successfully: $PACKAGE_FILENAME"
     else
-        log_error "Failed to download package from: $GITHUB_PACKAGE_URL"
+        log_error "Failed to download package from: $PACKAGE_URL"
+        log_info "Please check:"
+        log_info "  1. Internet connectivity"
+        log_info "  2. Package availability for your architecture ($PACKAGE_ARCH)"
+        log_info "  3. GitHub repository access"
         exit 1
     fi
 }
 
-# Install package
+# Install package based on detected package manager
 install_package() {
-    log_info "Installing monitoring agent package..."
+    log_info "Installing monitoring agent package using $PACKAGE_MANAGER..."
     
-    # Update package lists
-    apt-get update -qq
-    
-    # Install the package
-    if dpkg -i "$DEB_PACKAGE" 2>/dev/null; then
-        log_success "Package installed successfully"
-    else
-        log_warning "Package installation had dependency issues, fixing..."
-        apt-get install -f -y
-        log_success "Dependencies resolved and package installed"
-    fi
+    case $PACKAGE_MANAGER in
+        dpkg)
+            # Update package lists
+            apt-get update -qq
+            
+            # Install the package
+            if dpkg -i "$DOWNLOADED_PACKAGE" 2>/dev/null; then
+                log_success "DEB package installed successfully"
+            else
+                log_warning "Package installation had dependency issues, fixing..."
+                apt-get install -f -y
+                log_success "Dependencies resolved and package installed"
+            fi
+            ;;
+            
+        rpm)
+            # Install the package directly
+            if rpm -ivh "$DOWNLOADED_PACKAGE" 2>/dev/null; then
+                log_success "RPM package installed successfully"
+            else
+                log_error "RPM package installation failed"
+                log_info "Try installing manually: sudo rpm -ivh $DOWNLOADED_PACKAGE"
+                exit 1
+            fi
+            ;;
+            
+        yum)
+            if yum localinstall -y "$DOWNLOADED_PACKAGE"; then
+                log_success "Package installed successfully via YUM"
+            else
+                log_error "YUM package installation failed"
+                exit 1
+            fi
+            ;;
+            
+        dnf)
+            if dnf localinstall -y "$DOWNLOADED_PACKAGE"; then
+                log_success "Package installed successfully via DNF"
+            else
+                log_error "DNF package installation failed"
+                exit 1
+            fi
+            ;;
+            
+        *)
+            log_error "Unsupported package manager: $PACKAGE_MANAGER"
+            exit 1
+            ;;
+    esac
 }
 
 # Auto-detect system information
@@ -252,6 +346,11 @@ show_post_install_info() {
     echo
     log_success "CheckCle Monitoring Agent installed and configured successfully"
     echo
+    echo "System Information:"
+    echo "  Architecture: $ARCH ($PACKAGE_ARCH)"
+    echo "  Package: $PACKAGE_FILENAME"
+    echo "  Package Manager: $PACKAGE_MANAGER"
+    echo
     echo "Configuration: $CONFIG_FILE"
     echo "Service status: systemctl status monitoring-agent"
     echo "Service logs: journalctl -u monitoring-agent -f"
@@ -259,6 +358,14 @@ show_post_install_info() {
     echo
     echo "The monitoring agent is now running and will appear in your dashboard."
     echo
+}
+
+# Clean up temporary files
+cleanup() {
+    if [[ -n "$DOWNLOADED_PACKAGE" && -f "$DOWNLOADED_PACKAGE" ]]; then
+        rm -f "$DOWNLOADED_PACKAGE"
+        rm -rf "$(dirname "$DOWNLOADED_PACKAGE")"
+    fi
 }
 
 # Main installation function
@@ -271,9 +378,13 @@ main() {
     
     check_root
     validate_environment
+    detect_system
     detect_system_info
     
     log_info "Starting automated installation..."
+    
+    # Set up cleanup trap
+    trap cleanup EXIT
     
     # Download and install package
     download_package
@@ -302,6 +413,11 @@ case "${1:-}" in
         echo "   or: sudo SERVER_TOKEN=your-token [OPTIONS] bash $0"
         echo "   or: curl -L script-url | SERVER_TOKEN=your-token [OPTIONS] sudo bash"
         echo
+        echo "System Requirements:"
+        echo "  - Linux with systemd"
+        echo "  - Supported architectures: x86_64 (amd64), aarch64/arm64"
+        echo "  - Supported distributions: Debian/Ubuntu (.deb), RHEL/CentOS/Fedora (.rpm)"
+        echo
         echo "Required Environment Variables:"
         echo "  SERVER_TOKEN          Server authentication token"
         echo
@@ -326,7 +442,14 @@ case "${1:-}" in
         log_info "Uninstalling monitoring agent..."
         systemctl stop monitoring-agent 2>/dev/null || true
         systemctl disable monitoring-agent 2>/dev/null || true
-        dpkg -r monitoring-agent 2>/dev/null || true
+        
+        # Remove based on detected package manager
+        if command -v dpkg >/dev/null 2>&1; then
+            dpkg -r monitoring-agent 2>/dev/null || true
+        elif command -v rpm >/dev/null 2>&1; then
+            rpm -e monitoring-agent 2>/dev/null || true
+        fi
+        
         rm -rf /etc/monitoring-agent 2>/dev/null || true
         log_success "Monitoring agent uninstalled"
         exit 0
