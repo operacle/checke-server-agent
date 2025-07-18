@@ -3,27 +3,29 @@
 set -e
 
 case "$1" in
+    remove)
+        # Remove configuration files on package removal
+        if [ -d /etc/monitoring-agent ]; then
+            rm -rf /etc/monitoring-agent
+        fi
+        ;;
     purge)
+        # Complete cleanup on purge
+        if [ -d /var/lib/monitoring-agent ]; then
+            rm -rf /var/lib/monitoring-agent
+        fi
+        if [ -d /var/log/monitoring-agent ]; then
+            rm -rf /var/log/monitoring-agent
+        fi
         # Remove user and group
         if getent passwd monitoring-agent >/dev/null 2>&1; then
-            deluser monitoring-agent || true
+            userdel monitoring-agent
         fi
-        
         if getent group monitoring-agent >/dev/null 2>&1; then
-            delgroup monitoring-agent || true
+            groupdel monitoring-agent
         fi
-        
-        # Remove directories
-        rm -rf /var/lib/monitoring-agent
-        rm -rf /var/log/monitoring-agent
-        rm -rf /etc/monitoring-agent
-        
-        echo "Server Monitoring Agent completely removed."
-        ;;
-    remove)
-        echo "Server Monitoring Agent removed but configuration preserved."
         ;;
 esac
 
 # Reload systemd
-systemctl daemon-reload || true
+systemctl daemon-reload

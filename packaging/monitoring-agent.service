@@ -1,7 +1,7 @@
 
 [Unit]
 Description=CheckCle Server Monitoring Agent
-Documentation=https://github.com/operacle/checkcle-server-agent
+Documentation=https://github.com/checkcle/server-monitoring-agent
 After=network.target
 Wants=network.target
 
@@ -36,7 +36,7 @@ RestrictRealtime=true
 RestrictSUIDSGID=true
 RemoveIPC=true
 
-# Environment
+# Environment - Load from env file
 EnvironmentFile=-/etc/monitoring-agent/monitoring-agent.env
 WorkingDirectory=/var/lib/monitoring-agent
 

@@ -2,14 +2,11 @@
 #!/bin/bash
 set -e
 
-# Stop the service if it's running
+# Stop the service before removing
 if systemctl is-active --quiet monitoring-agent; then
-    echo "Stopping monitoring-agent service..."
     systemctl stop monitoring-agent
 fi
 
-# Disable the service
 if systemctl is-enabled --quiet monitoring-agent; then
-    echo "Disabling monitoring-agent service..."
     systemctl disable monitoring-agent
 fi

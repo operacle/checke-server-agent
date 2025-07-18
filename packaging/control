@@ -4,7 +4,7 @@ Version: 1.0.0
 Section: utils
 Priority: optional
 Architecture: amd64
-Maintainer: Tola Leng <hello@checkcle.io>
+Maintainer: Tola Leng <tolaleng@checkcle.io>
 Description: Go-based monitoring agent with gRPC and PocketBase support
  A comprehensive monitoring agent that collects system metrics (CPU, Memory, 
  Disk, Network) and sends them to remote servers via multiple protocols including
@@ -18,4 +18,4 @@ Description: Go-based monitoring agent with gRPC and PocketBase support
  - Health check endpoints
  - Configurable via environment variables
 Depends: libc6 (>= 2.17)
-Homepage: https://github.com/operacle/checkcle-server-agent
+Homepage: https://github.com/operacle/server-monitoring-agent
