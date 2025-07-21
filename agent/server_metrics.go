@@ -1,5 +1,3 @@
-
-
 package agent
 
 import (
@@ -25,8 +23,13 @@ func (a *Agent) gatherServerMetrics() pbClient.ServerRecord {
 	// Get real CPU usage with improved accuracy
 	cpuUsage := collector.GetCPUUsage()
 	
-	// Check Docker availability
-	dockerAvailable := collector.IsDockerAvailable()
+	// Check Docker availability only if Docker is enabled in PocketBase
+	var dockerAvailable bool
+	if a.serverRecord.Docker.Value {
+		dockerAvailable = collector.IsDockerAvailable()
+	} else {
+		dockerAvailable = false
+	}
 	
 	// Format comprehensive system info
 	systemInfoString := fmt.Sprintf("%s %s | %s | Kernel: %s | CPU: %s (%d cores) | RAM: %.1f GB | Go %s | IP: %s | Docker: %t", 
@@ -61,7 +64,7 @@ func (a *Agent) gatherServerMetrics() pbClient.ServerRecord {
 		ServerToken:    a.config.ServerToken,
 		Connection:     "connected",
 		SystemInfo:     systemInfoString, // Comprehensive system info
-		Docker:         pbClient.FlexibleBool{Value: dockerAvailable},   // Set Docker availability
+		Docker:         pbClient.FlexibleBool{Value: dockerAvailable},   // Set Docker availability based on PocketBase setting
 		Timestamp:      time.Now().Format(time.RFC3339),
 		// Preserve the existing check_interval from the server record instead of overwriting it
 		CheckInterval:  a.serverRecord.CheckInterval,
@@ -149,6 +152,11 @@ func (a *Agent) getUptimeString() string {
 func (a *Agent) gatherDockerContainers() []pbClient.DockerRecord {
 	var dockerRecords []pbClient.DockerRecord
 	
+	// Check if Docker monitoring is enabled in PocketBase before proceeding
+	if !a.serverRecord.Docker.Value {
+		return dockerRecords // Return empty slice if Docker is disabled
+	}
+	
 	collector := NewSystemCollector()
 	dockerInfo := collector.GetDockerInfo()
 	
@@ -185,6 +193,11 @@ func (a *Agent) gatherDockerContainers() []pbClient.DockerRecord {
 
 func (a *Agent) gatherDockerMetrics() []pbClient.DockerMetricsRecord {
 	var dockerMetrics []pbClient.DockerMetricsRecord
+	
+	// Check if Docker monitoring is enabled in PocketBase before proceeding
+	if !a.serverRecord.Docker.Value {
+		return dockerMetrics // Return empty slice if Docker is disabled
+	}
 	
 	collector := NewSystemCollector()
 	dockerInfo := collector.GetDockerInfo()
