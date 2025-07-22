@@ -1,14 +1,15 @@
 
 [Unit]
 Description=CheckCle Server Monitoring Agent
-Documentation=https://github.com/operacle/server-monitoring-agent
+Documentation=https://github.com/operacle/checkcle-monitoring-agent
 After=network.target
-Wants=network.target
+Wants=network.target docker.service
 
 [Service]
 Type=simple
 User=monitoring-agent
 Group=monitoring-agent
+# Remove docker group requirement - will be handled programmatically if needed
 ExecStart=/usr/bin/monitoring-agent
 Restart=always
 RestartSec=10
@@ -16,13 +17,16 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=monitoring-agent
 
-# Security settings
+# Environment variables with full PATH
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Security settings (relaxed for Docker access)
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/log/monitoring-agent
+ReadWritePaths=/var/log/monitoring-agent /var/run/docker.sock
 PrivateTmp=true
-PrivateDevices=true
+PrivateDevices=false
 ProtectHostname=true
 ProtectClock=true
 ProtectKernelTunables=true
@@ -31,7 +35,7 @@ ProtectKernelLogs=true
 ProtectControlGroups=true
 RestrictNamespaces=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
+MemoryDenyWriteExecute=false
 RestrictRealtime=true
 RestrictSUIDSGID=true
 RemoveIPC=true

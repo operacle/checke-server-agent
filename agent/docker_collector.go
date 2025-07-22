@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -31,11 +32,64 @@ type DockerInfo struct {
 	Containers []DockerStats
 }
 
-// IsDockerAvailable checks if Docker service is running
+// IsDockerAvailable checks if Docker service is running with enhanced detection for systemd
 func (sc *SystemCollector) IsDockerAvailable() bool {
-	cmd := exec.Command("docker", "version", "--format", "{{.Server.Version}}")
+	// Try multiple approaches to detect Docker availability
+	
+	// Method 1: Try standard docker command with full PATH
+	if sc.tryDockerCommand("/usr/bin/docker") {
+		return true
+	}
+	
+	// Method 2: Try docker command from common locations
+	dockerPaths := []string{
+		"/usr/local/bin/docker",
+		"/bin/docker",
+		"/usr/sbin/docker",
+		"docker", // fallback to PATH
+	}
+	
+	for _, dockerPath := range dockerPaths {
+		if sc.tryDockerCommand(dockerPath) {
+			return true
+		}
+	}
+	
+	// Method 3: Check if Docker socket exists
+	if sc.checkDockerSocket() {
+		return true
+	}
+	
+	return false
+}
+
+// tryDockerCommand attempts to run docker version command with specific binary path
+func (sc *SystemCollector) tryDockerCommand(dockerPath string) bool {
+	cmd := exec.Command(dockerPath, "version", "--format", "{{.Server.Version}}")
+	
+	// Set environment variables for systemd service execution
+	cmd.Env = append(os.Environ(),
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+	)
+	
 	err := cmd.Run()
 	return err == nil
+}
+
+// checkDockerSocket checks if Docker socket is accessible
+func (sc *SystemCollector) checkDockerSocket() bool {
+	socketPaths := []string{
+		"/var/run/docker.sock",
+		"/run/docker.sock",
+	}
+	
+	for _, socketPath := range socketPaths {
+		if _, err := os.Stat(socketPath); err == nil {
+			return true
+		}
+	}
+	
+	return false
 }
 
 // GetDockerInfo returns comprehensive Docker information
@@ -57,23 +111,58 @@ func (sc *SystemCollector) GetDockerInfo() DockerInfo {
 	return dockerInfo
 }
 
-// getDockerVersion gets Docker version
+// getDockerVersion gets Docker version with enhanced path detection
 func (sc *SystemCollector) getDockerVersion() string {
-	cmd := exec.Command("docker", "version", "--format", "{{.Server.Version}}")
-	output, err := cmd.Output()
-	if err != nil {
-		return "unknown"
+	dockerPaths := []string{
+		"/usr/bin/docker",
+		"/usr/local/bin/docker",
+		"/bin/docker",
+		"docker",
 	}
-	return strings.TrimSpace(string(output))
+	
+	for _, dockerPath := range dockerPaths {
+		cmd := exec.Command(dockerPath, "version", "--format", "{{.Server.Version}}")
+		cmd.Env = append(os.Environ(),
+			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		)
+		
+		output, err := cmd.Output()
+		if err == nil {
+			return strings.TrimSpace(string(output))
+		}
+	}
+	
+	return "unknown"
 }
 
-// getDockerContainers gets statistics for all running containers
+// getDockerContainers gets statistics for all running containers with enhanced path detection
 func (sc *SystemCollector) getDockerContainers() []DockerStats {
 	var containers []DockerStats
-
-	// Get list of running containers with detailed format
-	cmd := exec.Command("docker", "ps", "--format", "{{.ID}}:{{.Names}}:{{.Status}}:{{.RunningFor}}")
-	output, err := cmd.Output()
+	
+	dockerPaths := []string{
+		"/usr/bin/docker",
+		"/usr/local/bin/docker",
+		"/bin/docker",
+		"docker",
+	}
+	
+	var cmd *exec.Cmd
+	var output []byte
+	var err error
+	
+	// Try different Docker binary paths
+	for _, dockerPath := range dockerPaths {
+		cmd = exec.Command(dockerPath, "ps", "--format", "{{.ID}}:{{.Names}}:{{.Status}}:{{.RunningFor}}")
+		cmd.Env = append(os.Environ(),
+			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		)
+		
+		output, err = cmd.Output()
+		if err == nil {
+			break
+		}
+	}
+	
 	if err != nil {
 		return containers
 	}
@@ -107,7 +196,7 @@ func (sc *SystemCollector) getDockerContainers() []DockerStats {
 	return containers
 }
 
-// getContainerStats gets detailed statistics for a specific container
+// getContainerStats gets detailed statistics for a specific container with enhanced Docker path detection
 func (sc *SystemCollector) getContainerStats(containerID, containerName, status, uptime string) DockerStats {
 	stats := DockerStats{
 		ID:     containerID,
@@ -116,10 +205,31 @@ func (sc *SystemCollector) getContainerStats(containerID, containerName, status,
 		Uptime: uptime,
 	}
 
-	// Get container stats using docker stats command with specific format
-	cmd := exec.Command("docker", "stats", "--no-stream", "--format", 
-		"{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}|{{.BlockIO}}", containerID)
-	output, err := cmd.Output()
+	dockerPaths := []string{
+		"/usr/bin/docker",
+		"/usr/local/bin/docker",
+		"/bin/docker",
+		"docker",
+	}
+	
+	var cmd *exec.Cmd
+	var output []byte
+	var err error
+	
+	// Try different Docker binary paths for stats command
+	for _, dockerPath := range dockerPaths {
+		cmd = exec.Command(dockerPath, "stats", "--no-stream", "--format", 
+			"{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}|{{.BlockIO}}", containerID)
+		cmd.Env = append(os.Environ(),
+			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		)
+		
+		output, err = cmd.Output()
+		if err == nil {
+			break
+		}
+	}
+	
 	if err != nil {
 		// If stats command fails, try to get basic info
 		stats.CPUUsage = 0.0
@@ -254,35 +364,50 @@ func (sc *SystemCollector) parseDataSize(sizeStr string) int64 {
 	return int64(size * float64(multiplier))
 }
 
-// getContainerDiskTotal gets container disk total using docker system df
+// getContainerDiskTotal gets container disk total using docker system df with enhanced path detection
 func (sc *SystemCollector) getContainerDiskTotal(containerID string) int64 {
-	// Get container size using docker inspect
-	cmd := exec.Command("docker", "inspect", "--format", "{{.SizeRootFs}}", containerID)
-	output, err := cmd.Output()
-	if err != nil {
-		// Fallback: try to get from system df
-		cmd2 := exec.Command("docker", "system", "df", "--format", "table {{.Size}}")
-		output2, err2 := cmd2.Output()
-		if err2 != nil {
-			return 10 * 1024 * 1024 * 1024 // Default 10GB
-		}
+	dockerPaths := []string{
+		"/usr/bin/docker",
+		"/usr/local/bin/docker",
+		"/bin/docker",
+		"docker",
+	}
+	
+	// Try docker inspect first
+	for _, dockerPath := range dockerPaths {
+		cmd := exec.Command(dockerPath, "inspect", "--format", "{{.SizeRootFs}}", containerID)
+		cmd.Env = append(os.Environ(),
+			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		)
 		
-		lines := strings.Split(string(output2), "\n")
-		if len(lines) > 1 {
-			sizeStr := strings.TrimSpace(lines[1])
-			if size := sc.parseDataSize(sizeStr); size > 0 {
-				return size
+		output, err := cmd.Output()
+		if err == nil {
+			sizeStr := strings.TrimSpace(string(output))
+			if size, err := strconv.ParseInt(sizeStr, 10, 64); err == nil {
+				// Add some buffer for container filesystem
+				return size + (2 * 1024 * 1024 * 1024) // Add 2GB buffer
 			}
 		}
+	}
+	
+	// Fallback: try to get from system df
+	for _, dockerPath := range dockerPaths {
+		cmd := exec.Command(dockerPath, "system", "df", "--format", "table {{.Size}}")
+		cmd.Env = append(os.Environ(),
+			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		)
 		
-		return 10 * 1024 * 1024 * 1024 // Default 10GB
+		output, err := cmd.Output()
+		if err == nil {
+			lines := strings.Split(string(output), "\n")
+			if len(lines) > 1 {
+				sizeStr := strings.TrimSpace(lines[1])
+				if size := sc.parseDataSize(sizeStr); size > 0 {
+					return size
+				}
+			}
+		}
 	}
-
-	sizeStr := strings.TrimSpace(string(output))
-	if size, err := strconv.ParseInt(sizeStr, 10, 64); err == nil {
-		// Add some buffer for container filesystem
-		return size + (2 * 1024 * 1024 * 1024) // Add 2GB buffer
-	}
-
+	
 	return 10 * 1024 * 1024 * 1024 // Default 10GB
 }
