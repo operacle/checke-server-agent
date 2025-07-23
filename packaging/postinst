@@ -32,25 +32,81 @@ chmod 644 /etc/monitoring-agent/monitoring-agent.env.example
 # Make binary executable
 chmod +x /usr/bin/monitoring-agent
 
+# Check if Docker is installed and modify service file accordingly
+DOCKER_AVAILABLE=false
+if command -v docker >/dev/null 2>&1 && getent group docker >/dev/null 2>&1; then
+    DOCKER_AVAILABLE=true
+    # Add monitoring-agent user to docker group if Docker is available
+    usermod -a -G docker monitoring-agent
+fi
+
+# Create the final service file based on Docker availability
+SERVICE_FILE="/etc/systemd/system/monitoring-agent.service"
+cat > "$SERVICE_FILE" << 'EOF'
+[Unit]
+Description=CheckCle Server Monitoring Agent
+Documentation=https://github.com/operacle/checkcle-server-agent
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=monitoring-agent
+Group=monitoring-agent
+EOF
+
+# Add Docker group only if Docker is available
+if [ "$DOCKER_AVAILABLE" = true ]; then
+    echo "# Add docker group for Docker monitoring access" >> "$SERVICE_FILE"
+    echo "SupplementaryGroups=docker" >> "$SERVICE_FILE"
+else
+    echo "# Docker not available - skipping Docker group configuration" >> "$SERVICE_FILE"
+fi
+
+# Continue with the rest of the service configuration
+cat >> "$SERVICE_FILE" << 'EOF'
+ExecStart=/usr/bin/monitoring-agent
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+RestrictRealtime=yes
+
+# Allow access to system information and configuration
+ReadWritePaths=/var/log/monitoring-agent
+ReadOnlyPaths=/proc /sys /etc/monitoring-agent
+
+# Network access
+PrivateNetwork=no
+
+# Environment
+EnvironmentFile=/etc/monitoring-agent/monitoring-agent.env
+WorkingDirectory=/var/lib/monitoring-agent
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 # Reload systemd
 systemctl daemon-reload
 
 # Display configuration message
 echo "======================================================================"
-echo "Monitoring Agent installed successfully!"
+echo "CheckCle onitoring Agent installed successfully!"
 echo ""
-echo "IMPORTANT: Please configure the agent before starting:"
-echo "1. Edit /etc/monitoring-agent/monitoring-agent.env"
-echo "2. Set required values:"
-echo "   - POCKETBASE_URL=your-pocketbase-url"
-echo "   - SERVER_TOKEN=your-unique-server-token"
-echo "   - SERVER_NAME=your-server-name (optional, will use hostname)"
-echo ""
-echo "3. Enable and start the service:"
-echo "   sudo systemctl enable monitoring-agent"
-echo "   sudo systemctl start monitoring-agent"
-echo ""
-echo "4. Check status:"
-echo "   sudo systemctl status monitoring-agent"
-echo "   sudo journalctl -u monitoring-agent -f"
-echo "======================================================================"
+if [ "$DOCKER_AVAILABLE" = true ]; then
+    echo "✓ Docker detected - Docker monitoring enabled"
+else
+    echo "ℹ Docker not detected - Docker monitoring disabled"
+    echo "  (Docker monitoring will be available if Docker is installed later)"
+fi

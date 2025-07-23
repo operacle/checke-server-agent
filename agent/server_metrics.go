@@ -1,7 +1,9 @@
+
 package agent
 
 import (
 	"fmt"
+	"log"
 	"runtime"
 	"time"
 
@@ -164,6 +166,10 @@ func (a *Agent) gatherDockerContainers() []pbClient.DockerRecord {
 		return dockerRecords
 	}
 	
+	if len(dockerInfo.Containers) == 0 {
+		return dockerRecords
+	}
+	
 	sysInfo := collector.GetSystemInfo()
 	
 	for _, container := range dockerInfo.Containers {
@@ -206,6 +212,10 @@ func (a *Agent) gatherDockerMetrics() []pbClient.DockerMetricsRecord {
 		return dockerMetrics
 	}
 	
+	if len(dockerInfo.Containers) == 0 {
+		return dockerMetrics
+	}
+	
 	for _, container := range dockerInfo.Containers {
 		// Calculate derived values
 		ramFree := container.MemTotal - container.MemUsage
@@ -232,12 +242,11 @@ func (a *Agent) gatherDockerMetrics() []pbClient.DockerMetricsRecord {
 			diskPercentage = float64(container.DiskUsage) / float64(container.DiskTotal) * 100
 		}
 		
-		// Format values with units and proper precision - ensure we have real data
+		// Format values with units and proper precision
 		ramTotalStr := fmt.Sprintf("%.2f GB", float64(container.MemTotal)/1024/1024/1024)
 		ramUsedStr := fmt.Sprintf("%.2f GB (%.1f%%)", float64(container.MemUsage)/1024/1024/1024, ramPercentage)
 		ramFreeStr := fmt.Sprintf("%.2f GB", float64(ramFree)/1024/1024/1024)
 		
-		// Get actual CPU cores for the container (use system CPU cores as fallback)
 		cpuCoresStr := fmt.Sprintf("%d", runtime.NumCPU())
 		cpuUsageStr := fmt.Sprintf("%.2f%%", container.CPUUsage)
 		cpuFreeStr := fmt.Sprintf("%.2f%%", cpuFree)
@@ -274,7 +283,11 @@ func (a *Agent) gatherDockerMetrics() []pbClient.DockerMetricsRecord {
 
 func (a *Agent) sendDockerRecords(dockerRecords []pbClient.DockerRecord) error {
 	if a.pocketBase == nil {
-		return fmt.Errorf("no PocketBase client available")
+		return fmt.Errorf("no PB client available")
+	}
+	
+	if len(dockerRecords) == 0 {
+		return nil
 	}
 	
 	for _, docker := range dockerRecords {
@@ -283,11 +296,13 @@ func (a *Agent) sendDockerRecords(dockerRecords []pbClient.DockerRecord) error {
 		if err != nil {
 			// Docker record doesn't exist, create new one
 			if err := a.pocketBase.SaveDockerRecord(docker); err != nil {
+				log.Printf("Failed to save docker record %s: %v", docker.DockerID, err)
 				return fmt.Errorf("failed to save docker record %s: %v", docker.DockerID, err)
 			}
 		} else {
 			// Update existing Docker record
 			if err := a.pocketBase.UpdateDockerRecord(existingDocker.ID, docker); err != nil {
+				log.Printf("Failed to update docker record %s: %v", docker.DockerID, err)
 				return fmt.Errorf("failed to update docker record %s: %v", docker.DockerID, err)
 			}
 		}
@@ -301,8 +316,13 @@ func (a *Agent) sendDockerMetrics(dockerMetrics []pbClient.DockerMetricsRecord) 
 		return fmt.Errorf("no PocketBase client available")
 	}
 	
+	if len(dockerMetrics) == 0 {
+		return nil
+	}
+	
 	for _, metric := range dockerMetrics {
 		if err := a.pocketBase.SaveDockerMetricsRecord(metric); err != nil {
+			log.Printf("Failed to save docker metrics for %s: %v", metric.DockerID, err)
 			return fmt.Errorf("failed to save docker metrics for %s: %v", metric.DockerID, err)
 		}
 	}

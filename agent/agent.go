@@ -270,7 +270,7 @@ func (a *Agent) checkServerStatus() (bool, time.Duration, error) {
 	checkInterval := a.config.CheckInterval
 	if currentServer.CheckInterval.Value > 0 {
 		checkInterval = time.Duration(currentServer.CheckInterval.Value) * time.Second
-		log.Printf("Using check interval from server record: %v", checkInterval)
+		//log.Printf("Using check interval from server record: %v", checkInterval)
 	}
 	
 	// Check if server is paused
@@ -350,26 +350,26 @@ func (a *Agent) collectMetrics() {
 			if err := a.updateServerRecord(serverMetrics); err != nil {
 				log.Printf("Failed to update server record: %v", err)
 			} else {
-				log.Printf("Successfully updated server record at %s", time.Now().Format(time.RFC3339))
+				//log.Printf("Successfully updated server record at %s", time.Now().Format(time.RFC3339))
 			}
 			
 			// Send detailed metrics to the server_metrics collection
 			if err := a.sendDetailedServerMetrics(detailedMetrics); err != nil {
 				log.Printf("Failed to send detailed server metrics: %v", err)
 			} else {
-				log.Printf("Successfully sent detailed server metrics at %s", time.Now().Format(time.RFC3339))
+			//	log.Printf("Successfully sent detailed server metrics at %s", time.Now().Format(time.RFC3339))
 			}
 			
 			// Handle Docker monitoring if enabled
 			if serverMetrics.Docker.Value {
-				log.Printf("Docker is available, collecting Docker metrics...")
+			//	log.Printf("Docker is available, collecting Docker metrics...")
 				
 				// Collect Docker container records
 				dockerRecords := a.gatherDockerContainers()
 				if err := a.sendDockerRecords(dockerRecords); err != nil {
 					log.Printf("Failed to send Docker records: %v", err)
 				} else if len(dockerRecords) > 0 {
-					log.Printf("Successfully sent %d Docker records at %s", len(dockerRecords), time.Now().Format(time.RFC3339))
+				//	log.Printf("Successfully sent %d Docker records at %s", len(dockerRecords), time.Now().Format(time.RFC3339))
 				}
 				
 				// Collect Docker metrics
@@ -377,10 +377,10 @@ func (a *Agent) collectMetrics() {
 				if err := a.sendDockerMetrics(dockerMetrics); err != nil {
 					log.Printf("Failed to send Docker metrics: %v", err)
 				} else if len(dockerMetrics) > 0 {
-					log.Printf("Successfully sent %d Docker metrics at %s", len(dockerMetrics), time.Now().Format(time.RFC3339))
+					//log.Printf("Successfully sent %d Docker metrics at %s", len(dockerMetrics), time.Now().Format(time.RFC3339))
 				}
 			} else {
-				log.Printf("Docker is not available on this server, skipping Docker monitoring")
+			//	log.Printf("Docker is not available on this server, skipping Docker monitoring")
 			}
 		}
 	}

@@ -9,8 +9,7 @@ Wants=network.target
 Type=simple
 User=monitoring-agent
 Group=monitoring-agent
-# Add docker group for Docker monitoring access
-SupplementaryGroups=docker
+# Docker group configuration will be added dynamically during installation
 ExecStart=/usr/bin/monitoring-agent
 Restart=always
 RestartSec=10
