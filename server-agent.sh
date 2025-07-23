@@ -341,7 +341,7 @@ test_installation() {
 show_post_install_info() {
     echo
     echo "============================================="
-    echo "  Installation Complete!"
+    echo "  CheckCle Server Agent Installation Complete!"
     echo "============================================="
     echo
     log_success "CheckCle Monitoring Agent installed and configured successfully"
