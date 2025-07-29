@@ -25,13 +25,8 @@ func (a *Agent) gatherServerMetrics() pbClient.ServerRecord {
 	// Get real CPU usage with improved accuracy
 	cpuUsage := collector.GetCPUUsage()
 	
-	// Check Docker availability only if Docker is enabled in PocketBase
-	var dockerAvailable bool
-	if a.serverRecord.Docker.Value {
-		dockerAvailable = collector.IsDockerAvailable()
-	} else {
-		dockerAvailable = false
-	}
+	// Check Docker availability - but don't override PocketBase setting
+	dockerAvailable := collector.IsDockerAvailable()
 	
 	// Format comprehensive system info
 	systemInfoString := fmt.Sprintf("%s %s | %s | Kernel: %s | CPU: %s (%d cores) | RAM: %.1f GB | Go %s | IP: %s | Docker: %t", 
@@ -66,7 +61,8 @@ func (a *Agent) gatherServerMetrics() pbClient.ServerRecord {
 		ServerToken:    a.config.ServerToken,
 		Connection:     "connected",
 		SystemInfo:     systemInfoString, // Comprehensive system info
-		Docker:         pbClient.FlexibleBool{Value: dockerAvailable},   // Set Docker availability based on PocketBase setting
+		// Preserve the Docker setting from PocketBase - don't override it
+		Docker:         a.serverRecord.Docker,
 		Timestamp:      time.Now().Format(time.RFC3339),
 		// Preserve the existing check_interval from the server record instead of overwriting it
 		CheckInterval:  a.serverRecord.CheckInterval,
@@ -154,22 +150,33 @@ func (a *Agent) getUptimeString() string {
 func (a *Agent) gatherDockerContainers() []pbClient.DockerRecord {
 	var dockerRecords []pbClient.DockerRecord
 	
-	// Check if Docker monitoring is enabled in PocketBase before proceeding
+	// Check if Docker monitoring is enabled in PocketBase AND Docker is available
 	if !a.serverRecord.Docker.Value {
-		return dockerRecords // Return empty slice if Docker is disabled
+		log.Printf("Docker monitoring is disabled in PocketBase")
+		return dockerRecords // Return empty slice if Docker is disabled in PocketBase
 	}
 	
 	collector := NewSystemCollector()
+	
+	// Check if Docker is actually available on the system
+	if !collector.IsDockerAvailable() {
+		log.Printf("Docker is not available on system, but monitoring is enabled in PocketBase")
+		return dockerRecords
+	}
+	
 	dockerInfo := collector.GetDockerInfo()
 	
 	if !dockerInfo.Available {
+		log.Printf("Docker info indicates Docker is not available")
 		return dockerRecords
 	}
 	
 	if len(dockerInfo.Containers) == 0 {
+		log.Printf("No Docker containers found")
 		return dockerRecords
 	}
 	
+	log.Printf("Found %d Docker containers, collecting data", len(dockerInfo.Containers))
 	sysInfo := collector.GetSystemInfo()
 	
 	for _, container := range dockerInfo.Containers {
@@ -194,27 +201,40 @@ func (a *Agent) gatherDockerContainers() []pbClient.DockerRecord {
 		dockerRecords = append(dockerRecords, dockerRecord)
 	}
 	
+	log.Printf("Prepared %d Docker records for sending", len(dockerRecords))
 	return dockerRecords
 }
 
 func (a *Agent) gatherDockerMetrics() []pbClient.DockerMetricsRecord {
 	var dockerMetrics []pbClient.DockerMetricsRecord
 	
-	// Check if Docker monitoring is enabled in PocketBase before proceeding
+	// Check if Docker monitoring is enabled in PocketBase AND Docker is available
 	if !a.serverRecord.Docker.Value {
-		return dockerMetrics // Return empty slice if Docker is disabled
+		log.Printf("Docker monitoring is disabled in PocketBase")
+		return dockerMetrics // Return empty slice if Docker is disabled in PocketBase
 	}
 	
 	collector := NewSystemCollector()
+	
+	// Check if Docker is actually available on the system
+	if !collector.IsDockerAvailable() {
+		log.Printf("Docker is not available on system, but monitoring is enabled in PocketBase")
+		return dockerMetrics
+	}
+	
 	dockerInfo := collector.GetDockerInfo()
 	
 	if !dockerInfo.Available {
+		log.Printf("Docker info indicates Docker is not available")
 		return dockerMetrics
 	}
 	
 	if len(dockerInfo.Containers) == 0 {
+		log.Printf("No Docker containers found for metrics")
 		return dockerMetrics
 	}
+	
+	log.Printf("Collecting metrics for %d Docker containers", len(dockerInfo.Containers))
 	
 	for _, container := range dockerInfo.Containers {
 		// Calculate derived values
@@ -278,36 +298,45 @@ func (a *Agent) gatherDockerMetrics() []pbClient.DockerMetricsRecord {
 		dockerMetrics = append(dockerMetrics, dockerMetric)
 	}
 	
+	log.Printf("Prepared %d Docker metrics records for sending", len(dockerMetrics))
 	return dockerMetrics
 }
 
 func (a *Agent) sendDockerRecords(dockerRecords []pbClient.DockerRecord) error {
 	if a.pocketBase == nil {
-		return fmt.Errorf("no PB client available")
+		return fmt.Errorf("no PocketBase client available")
 	}
 	
 	if len(dockerRecords) == 0 {
+		log.Printf("No Docker records to send")
 		return nil
 	}
+	
+	log.Printf("Sending %d Docker records to PocketBase", len(dockerRecords))
 	
 	for _, docker := range dockerRecords {
 		// Try to find existing Docker record
 		existingDocker, err := a.pocketBase.GetDockerByID(docker.DockerID)
 		if err != nil {
 			// Docker record doesn't exist, create new one
+			log.Printf("Creating new Docker record for container %s (%s)", docker.Name, docker.DockerID)
 			if err := a.pocketBase.SaveDockerRecord(docker); err != nil {
 				log.Printf("Failed to save docker record %s: %v", docker.DockerID, err)
 				return fmt.Errorf("failed to save docker record %s: %v", docker.DockerID, err)
 			}
+			log.Printf("Successfully created Docker record for %s", docker.Name)
 		} else {
 			// Update existing Docker record
+			log.Printf("Updating existing Docker record for container %s (%s)", docker.Name, docker.DockerID)
 			if err := a.pocketBase.UpdateDockerRecord(existingDocker.ID, docker); err != nil {
 				log.Printf("Failed to update docker record %s: %v", docker.DockerID, err)
 				return fmt.Errorf("failed to update docker record %s: %v", docker.DockerID, err)
 			}
+			log.Printf("Successfully updated Docker record for %s", docker.Name)
 		}
 	}
 	
+	log.Printf("Successfully sent all Docker records")
 	return nil
 }
 
@@ -317,15 +346,21 @@ func (a *Agent) sendDockerMetrics(dockerMetrics []pbClient.DockerMetricsRecord) 
 	}
 	
 	if len(dockerMetrics) == 0 {
+		log.Printf("No Docker metrics to send")
 		return nil
 	}
 	
+	log.Printf("Sending %d Docker metrics records to PocketBase", len(dockerMetrics))
+	
 	for _, metric := range dockerMetrics {
+		log.Printf("Sending metrics for Docker container %s", metric.DockerID)
 		if err := a.pocketBase.SaveDockerMetricsRecord(metric); err != nil {
 			log.Printf("Failed to save docker metrics for %s: %v", metric.DockerID, err)
 			return fmt.Errorf("failed to save docker metrics for %s: %v", metric.DockerID, err)
 		}
+		log.Printf("Successfully sent metrics for Docker container %s", metric.DockerID)
 	}
 	
+	log.Printf("Successfully sent all Docker metrics")
 	return nil
 }
