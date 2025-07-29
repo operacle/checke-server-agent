@@ -49,6 +49,8 @@ show_usage() {
     echo "  $0 deb                # Build DEB packages for all architectures"
     echo "  $0 rpm arm64          # Build RPM package for ARM64 only"
     echo "  $0 all amd64          # Build all packages for AMD64 only"
+    echo ""
+    echo "Note: ARM64 RPM packages use fallback methods for cross-compilation"
 }
 
 build_packages() {
@@ -73,9 +75,29 @@ build_packages() {
         rpm)
             if [ "$RPM_AVAILABLE" = true ]; then
                 if [ "$arch" = "all" ]; then
-                    make rpm-all
+                    echo "Building RPM for AMD64..."
+                    make rpm-amd64
+                    echo ""
+                    echo "Building RPM for ARM64..."
+                    echo "Note: ARM64 RPM uses fallback method for cross-compilation"
+                    if make rpm-arm64; then
+                        echo "✅ ARM64 RPM build completed!"
+                    else
+                        echo "❌ ARM64 RPM build failed - fallback to tarball may be available"
+                    fi
                 else
-                    make rpm-$arch
+                    if [ "$arch" = "arm64" ]; then
+                        echo "Building RPM for ARM64..."
+                        echo "Note: ARM64 RPM uses fallback method for cross-compilation"
+                        if make rpm-$arch; then
+                            echo "✅ ARM64 RPM build completed!"
+                        else
+                            echo "❌ ARM64 RPM build failed - fallback to tarball may be available"
+                            echo "Check dist/ directory for tarball alternative"
+                        fi
+                    else
+                        make rpm-$arch
+                    fi
                 fi
             else
                 echo "Error: RPM packaging tools not available"
@@ -85,10 +107,34 @@ build_packages() {
         all)
             if [ "$arch" = "all" ]; then
                 [ "$DEB_AVAILABLE" = true ] && make deb-all
-                [ "$RPM_AVAILABLE" = true ] && make rpm-all
+                if [ "$RPM_AVAILABLE" = true ]; then
+                    echo "Building RPM for AMD64..."
+                    make rpm-amd64
+                    echo ""
+                    echo "Building RPM for ARM64..."
+                    echo "Note: ARM64 RPM uses fallback method for cross-compilation"
+                    if make rpm-arm64; then
+                        echo "✅ ARM64 RPM build completed!"
+                    else
+                        echo "❌ ARM64 RPM build failed - fallback to tarball may be available"
+                    fi
+                fi
             else
                 [ "$DEB_AVAILABLE" = true ] && make deb-$arch
-                [ "$RPM_AVAILABLE" = true ] && make rpm-$arch
+                if [ "$RPM_AVAILABLE" = true ]; then
+                    if [ "$arch" = "arm64" ]; then
+                        echo "Building RPM for ARM64..."
+                        echo "Note: ARM64 RPM uses fallback method for cross-compilation"
+                        if make rpm-$arch; then
+                            echo "✅ ARM64 RPM build completed!"
+                        else
+                            echo "❌ ARM64 RPM build failed - fallback to tarball may be available"
+                            echo "Check dist/ directory for tarball alternative"
+                        fi
+                    else
+                        make rpm-$arch
+                    fi
+                fi
             fi
             ;;
     esac
@@ -158,6 +204,13 @@ if ls dist/*.rpm >/dev/null 2>&1; then
     echo ""
 fi
 
+# Show tarball packages (fallback for ARM64)
+if ls dist/*.tar.gz >/dev/null 2>&1; then
+    echo "📦 Tarball Packages (Manual Installation):"
+    ls -la dist/*.tar.gz | awk '{print "  " $9 " (" $5 " bytes)"}'
+    echo ""
+fi
+
 # Installation instructions
 echo "🚀 Installation Instructions:"
 echo ""
@@ -176,6 +229,18 @@ if ls dist/*.rpm >/dev/null 2>&1; then
     for rpm in dist/*.rpm; do
         echo "  sudo rpm -ivh $rpm"
         echo "  # or: sudo yum localinstall $rpm"
+        echo "  # or: sudo dnf localinstall $rpm"
+    done
+    echo ""
+fi
+
+if ls dist/*.tar.gz >/dev/null 2>&1; then
+    echo "📋 Tarball Manual Installation (ARM64 fallback):"
+    for tarball in dist/*.tar.gz; do
+        echo "  # Extract and install manually:"
+        echo "  sudo tar -xzf $tarball -C /"
+        echo "  sudo systemctl daemon-reload"
+        echo "  sudo systemctl enable monitoring-agent"
     done
     echo ""
 fi
@@ -190,3 +255,8 @@ echo "  sudo systemctl status monitoring-agent"
 echo ""
 echo "🩺 Health Check:"
 echo "  curl http://localhost:8081/health"
+echo ""
+echo "📋 ARM64 Notes:"
+echo "  - ARM64 RPM packages may use fallback tarball method"
+echo "  - Tarball installation provides the same functionality as RPM"
+echo "  - Both methods work identically on ARM64 systems"
